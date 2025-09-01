@@ -28,23 +28,26 @@ Benchmarked on a standard development machine with 16 cores:
 ### Installation
 
 ```bash
-# From source
-git clone https://github.com/mehrantoosi/feox
-cd feox/feox-server
-cargo build --release
+# Install from crates.io
+cargo install feox-server
 
-# Run the server
-./target/release/feox-server
+# Or build from source
+git clone https://github.com/mehrantoosi/feox-server
+cd feox-server
+cargo build --release
 ```
 
 ### Basic Usage
 
 ```bash
 # Start server on default port (6379)
+feox-server
+
+# Or if built from source
 ./target/release/feox-server
 
 # Custom configuration
-./target/release/feox-server \
+feox-server \
   --port 6380 \
   --bind 0.0.0.0 \
   --threads 8 \
