@@ -1,0 +1,162 @@
+# FeOx Server
+
+Ultra-fast Redis-compatible server powered by FeOxDB with sub-microsecond latency.
+
+[📚 FeOxDB Documentation](https://feoxdb.com) | [💬 Issues](https://github.com/mehrantoosi/feox/issues)
+
+## Features
+
+- **Extreme Performance**: 3.7M+ SET/s, 5M+ GET/s with pipelining
+- **Redis Protocol Compatible**: Drop-in replacement for Redis workloads
+- **Sub-microsecond Latency**: Inherits FeOxDB's <200ns GET operations
+- **Thread-per-Core Architecture**: Scales linearly with CPU cores
+- **Lock-Free Operations**: Built on FeOxDB's lock-free data structures
+
+## Performance
+
+Benchmarked on a standard development machine with 16 cores:
+
+| Operation | Requests/sec | Latency (p50) |
+|-----------|-------------|---------------|
+| SET       | 3,770,000   | 0.62ms        |
+| GET       | 5,000,000   | 0.35ms        |
+
+*Using redis-benchmark with 50 clients, pipeline depth 64, and 1M random keys*
+
+## Quick Start
+
+### Installation
+
+```bash
+# From source
+git clone https://github.com/mehrantoosi/feox
+cd feox/feox-server
+cargo build --release
+
+# Run the server
+./target/release/feox-server
+```
+
+### Basic Usage
+
+```bash
+# Start server on default port (6379)
+./target/release/feox-server
+
+# Custom configuration
+./target/release/feox-server \
+  --port 6380 \
+  --bind 0.0.0.0 \
+  --threads 8 \
+  --data-path /var/lib/feox/data.db
+```
+
+### Testing with Redis CLI
+
+```bash
+# Connect with redis-cli
+redis-cli -p 6379
+
+# Basic operations
+SET key value
+GET key
+INCR counter
+EXPIRE key 60
+```
+
+## Supported Commands
+
+### Basic Operations
+- `GET key` - Get value by key
+- `SET key value [EX seconds]` - Set key with optional expiry
+- `DEL key [key ...]` - Delete one or more keys
+- `EXISTS key [key ...]` - Check if keys exist
+
+### Atomic Operations
+- `INCR key` - Increment integer value
+- `INCRBY key delta` - Increment by specific amount
+- `DECR key` - Decrement integer value
+- `DECRBY key delta` - Decrement by specific amount
+
+### TTL Operations
+- `EXPIRE key seconds` - Set expiration in seconds
+- `TTL key` - Get remaining TTL in seconds
+- `PERSIST key` - Remove expiration
+
+### Bulk Operations
+- `MGET key [key ...]` - Get multiple values
+- `MSET key value [key value ...]` - Set multiple key-value pairs
+
+### Server Commands
+- `PING [message]` - Test connection
+- `INFO [section]` - Server information
+- `CONFIG GET/SET` - Configuration management
+- `KEYS pattern` - Find keys by pattern
+- `SCAN cursor [MATCH pattern] [COUNT count]` - Incremental key iteration
+
+### FeOx-Specific
+- `JSONPATCH key patch` - Apply JSON Patch (RFC 6902)
+- `CAS key expected new_value` - Compare-and-swap operation
+
+## Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--port` | 6379 | Port to listen on |
+| `--bind` | 127.0.0.1 | Bind address |
+| `--threads` | CPU count | Number of worker threads |
+| `--data-path` | None | Path to persistent storage (memory-only if not set) |
+| `--log-level` | info | Logging level (trace/debug/info/warn/error) |
+
+## Building from Source
+
+### Requirements
+
+- Rust 1.70 or later
+- Linux/macOS (Windows support experimental)
+- For best performance: Linux with io_uring support
+
+## Benchmarking
+
+```bash
+# Using redis-benchmark
+redis-benchmark -n 1000000 -r 1000000 -c 50 -P 64 -t SET,GET
+
+# Basic test
+redis-benchmark -t SET,GET -n 100000 -q
+```
+
+## Known Limitations
+
+### Concurrent Updates to Same Key
+When multiple clients rapidly update the same key simultaneously, you may encounter "Timestamp is older than existing record" errors. This is by design - FeOx uses timestamp-based optimistic concurrency control for consistency.
+
+**Impact:**
+- Only affects concurrent updates to the same key in less than
+- Normal usage with different keys is unaffected
+- Performance with random keys: 3.7M SET/s, 5.0M GET/s
+
+For benchmarking, use the `-r` flag with redis-benchmark to test with random keys
+
+This is an architectural tradeoff that enables FeOx's lock-free, multi-threaded design while maintaining consistency.
+
+### Currently Not Supported (compared to Redis)
+- Lists (LPUSH, RPOP, etc.)
+- Sets (SADD, SMEMBERS, etc.)
+- Sorted Sets (ZADD, ZRANGE, etc.)
+- Hashes (HSET, HGET, etc.)
+- Pub/Sub (PUBLISH, SUBSCRIBE, etc.)
+- Transactions (MULTI, EXEC)
+- Lua scripting
+
+## License
+
+Apache License 2.0 - See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+For security issues, please see [SECURITY.md](SECURITY.md).
