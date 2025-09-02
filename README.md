@@ -124,9 +124,6 @@ EXPIRE key 60
 ```bash
 # Using redis-benchmark
 redis-benchmark -n 1000000 -r 1000000 -c 50 -P 64 -t SET,GET
-
-# Basic test
-redis-benchmark -t SET,GET -n 100000 -q
 ```
 
 ## Known Limitations
