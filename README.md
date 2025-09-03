@@ -117,7 +117,7 @@ EXPIRE key 60
 
 - Rust 1.70 or later
 - Linux/macOS (Windows support experimental)
-- For best performance: Linux with io_uring support
+- For best performance: Linux with io_uring support (for Feox persistence if enabled)
 
 ## Benchmarking
 
@@ -128,17 +128,17 @@ redis-benchmark -n 1000000 -r 1000000 -c 50 -P 64 -t SET,GET
 
 ## Known Limitations
 
-### Concurrent Updates to Same Key
+### Concurrent Updates to Same Key in macOS and Windows
 When multiple clients rapidly update the same key simultaneously, you may encounter "Timestamp is older than existing record" errors. This is by design - FeOx uses timestamp-based optimistic concurrency control for consistency.
 
 **Impact:**
-- Only affects concurrent updates to the same key in less than
+- Only affects concurrent updates to the same ke, sent in less than 1μs apart
 - Normal usage with different keys is unaffected
 - Performance with random keys: 3.7M SET/s, 5.0M GET/s
 
 For benchmarking, use the `-r` flag with redis-benchmark to test with random keys
 
-This is an architectural tradeoff that enables FeOx's lock-free, multi-threaded design while maintaining consistency.
+This is a limitation of the said operating systems on system time resolution in user space.
 
 ### Currently Not Supported (compared to Redis)
 - Lists (LPUSH, RPOP, etc.)
