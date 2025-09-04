@@ -1,4 +1,5 @@
 use super::Command;
+use crate::config::Config;
 use crate::protocol::resp::RespValue;
 use bytes::Bytes;
 use feoxdb::FeoxStore;
@@ -77,18 +78,25 @@ fn extract_prefix(pattern: &str) -> &str {
 /// Translates between Redis protocol semantics and FeOx operations.
 pub struct CommandExecutor {
     store: Arc<FeoxStore>,
+    config: Config, // Store config for auth checking
     start_time: std::time::Instant,
     commands_processed: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl CommandExecutor {
-    /// Create a new command executor with the given store
-    pub fn new(store: Arc<FeoxStore>) -> Self {
+    /// Create a new command executor with the given store and config
+    pub fn new(store: Arc<FeoxStore>, config: &Config) -> Self {
         Self {
             store,
+            config: config.clone(),
             start_time: std::time::Instant::now(),
             commands_processed: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
+    }
+
+    /// Check if password is correct
+    pub fn check_auth(&self, password: &str) -> bool {
+        self.config.check_password(password)
     }
 
     /// Execute a command and return RESP response
@@ -660,6 +668,17 @@ impl CommandExecutor {
                 match self.store.compare_and_swap(&key, &expected, &new_value) {
                     Ok(swapped) => RespValue::Integer(if swapped { 1 } else { 0 }),
                     Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
+
+            Command::Auth(_) => {
+                // This should be handled in connection.rs
+                // If we get here, it means auth is not configured
+                if self.config.requirepass.is_none() {
+                    RespValue::Error("-ERR Client sent AUTH, but no password is set".to_string())
+                } else {
+                    // Should not reach here
+                    RespValue::Error("-ERR AUTH failed".to_string())
                 }
             }
         }

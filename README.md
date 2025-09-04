@@ -91,6 +91,7 @@ EXPIRE key 60
 - `MSET key value [key value ...]` - Set multiple key-value pairs
 
 ### Server Commands
+- `AUTH password` - Authenticate connection
 - `PING [message]` - Test connection
 - `INFO [section]` - Server information
 - `CONFIG GET/SET` - Configuration management
@@ -110,6 +111,45 @@ EXPIRE key 60
 | `--threads` | CPU count | Number of worker threads |
 | `--data-path` | None | Path to persistent storage (memory-only if not set) |
 | `--log-level` | info | Logging level (trace/debug/info/warn/error) |
+| `--requirepass` | None | Password for AUTH command |
+
+## Authentication
+
+FeOx-server supports Redis-compatible AUTH command for basic access control.
+
+### Configuration
+
+```bash
+# Via command line
+./feox-server --requirepass yourpassword
+
+# Via environment variable
+FEOX_AUTH_PASSWORD=yourpassword ./feox-server
+
+# Via config file (config.toml)
+requirepass = "yourpassword"
+```
+
+### Using with Redis Clients
+
+```bash
+# Authenticate with redis-cli
+redis-cli -p 6379
+> AUTH yourpassword
+OK
+
+# Or use -a flag
+redis-cli -p 6379 -a yourpassword
+```
+
+### Security Warning ⚠️
+
+**AUTH credentials are sent in PLAINTEXT** over the network, exactly like Redis.
+
+For production use:
+1. **Bind to localhost only** (`--bind 127.0.0.1`)
+2. **Use SSH tunnels** for remote access
+3. **Use firewalls** to restrict network access
 
 ## Building from Source
 

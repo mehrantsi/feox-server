@@ -1,7 +1,7 @@
 use clap::Parser;
 use feox_server::{Config, Server};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -33,6 +33,10 @@ struct Args {
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// Password for AUTH command
+    #[arg(long)]
+    requirepass: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -72,14 +76,39 @@ fn main() -> anyhow::Result<()> {
     let config = if let Some(config_path) = args.config {
         Config::from_file(&config_path)?
     } else {
-        Config {
+        let mut config = Config {
             bind_addr: args.bind,
             port: args.port,
             threads,
             data_path: args.data_path,
             ..Default::default()
+        };
+
+        // Set password from command line or environment
+        if let Some(password) = args.requirepass {
+            if password.is_empty() {
+                warn!("Empty password provided, authentication disabled");
+            } else {
+                info!("Authentication enabled (password configured)");
+                config.requirepass = Some(password);
+            }
         }
+
+        config
     };
+
+    // Security warning
+    if config.requirepass.is_some()
+        && config.bind_addr != "127.0.0.1"
+        && config.bind_addr != "localhost"
+    {
+        warn!(
+            "WARNING: Authentication is enabled but server is bound to {}. \
+            AUTH credentials will be sent in PLAINTEXT over the network. \
+            Consider binding to localhost only or using SSH tunnels for remote access.",
+            config.bind_addr
+        );
+    }
 
     // Create and run server
     let server = Arc::new(Server::new(config)?);

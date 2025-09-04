@@ -162,6 +162,7 @@ impl Server {
                                         0, // fd not used in this path
                                         self.config.connection_buffer_size,
                                         Arc::clone(&store),
+                                        &self.config, // Pass config here
                                     );
 
                                     connections.insert(token, (stream, connection));
