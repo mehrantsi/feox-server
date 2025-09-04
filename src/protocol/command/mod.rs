@@ -2,6 +2,7 @@ use crate::protocol::resp::RespValue;
 use bytes::Bytes;
 
 mod executor;
+mod list;
 mod parser;
 
 pub use executor::CommandExecutor;
@@ -81,6 +82,34 @@ pub enum Command {
 
     // Authentication
     Auth(Vec<u8>),
+
+    // List commands
+    LPush {
+        key: Vec<u8>,
+        values: Vec<Bytes>,
+    },
+    RPush {
+        key: Vec<u8>,
+        values: Vec<Bytes>,
+    },
+    LPop {
+        key: Vec<u8>,
+        count: Option<usize>,
+    },
+    RPop {
+        key: Vec<u8>,
+        count: Option<usize>,
+    },
+    LLen(Vec<u8>),
+    LRange {
+        key: Vec<u8>,
+        start: i64,
+        stop: i64,
+    },
+    LIndex {
+        key: Vec<u8>,
+        index: i64,
+    },
 }
 
 impl Command {

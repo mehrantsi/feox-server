@@ -298,6 +298,83 @@ pub fn parse_command(value: RespValue) -> Result<Command, String> {
                     })
                 }
 
+                b"LPUSH" => {
+                    if args.len() < 2 {
+                        return Err("wrong number of arguments for 'LPUSH' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let values = args[1..]
+                        .iter()
+                        .map(extract_bytes)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::LPush { key, values })
+                }
+
+                b"RPUSH" => {
+                    if args.len() < 2 {
+                        return Err("wrong number of arguments for 'RPUSH' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let values = args[1..]
+                        .iter()
+                        .map(extract_bytes)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::RPush { key, values })
+                }
+
+                b"LPOP" => {
+                    if args.is_empty() || args.len() > 2 {
+                        return Err("wrong number of arguments for 'LPOP' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let count = if args.len() == 2 {
+                        Some(extract_integer(&args[1])? as usize)
+                    } else {
+                        None
+                    };
+                    Ok(Command::LPop { key, count })
+                }
+
+                b"RPOP" => {
+                    if args.is_empty() || args.len() > 2 {
+                        return Err("wrong number of arguments for 'RPOP' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let count = if args.len() == 2 {
+                        Some(extract_integer(&args[1])? as usize)
+                    } else {
+                        None
+                    };
+                    Ok(Command::RPop { key, count })
+                }
+
+                b"LLEN" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'LLEN' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::LLen(key))
+                }
+
+                b"LRANGE" => {
+                    if args.len() != 3 {
+                        return Err("wrong number of arguments for 'LRANGE' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let start = extract_integer(&args[1])?;
+                    let stop = extract_integer(&args[2])?;
+                    Ok(Command::LRange { key, start, stop })
+                }
+
+                b"LINDEX" => {
+                    if args.len() != 2 {
+                        return Err("wrong number of arguments for 'LINDEX' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let index = extract_integer(&args[1])?;
+                    Ok(Command::LIndex { key, index })
+                }
+
                 b"AUTH" => {
                     if args.len() != 1 {
                         return Err("wrong number of arguments for 'AUTH' command".to_string());

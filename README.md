@@ -75,6 +75,15 @@ EXPIRE key 60
 - `DEL key [key ...]` - Delete one or more keys
 - `EXISTS key [key ...]` - Check if keys exist
 
+### List Operations
+- `LPUSH key value [value ...]` - Push values to the head of list
+- `RPUSH key value [value ...]` - Push values to the tail of list
+- `LPOP key [count]` - Pop values from the head of list
+- `RPOP key [count]` - Pop values from the tail of list
+- `LLEN key` - Get the length of a list
+- `LRANGE key start stop` - Get a range of elements from a list
+- `LINDEX key index` - Get an element from a list by index
+
 ### Atomic Operations
 - `INCR key` - Increment integer value
 - `INCRBY key delta` - Increment by specific amount
@@ -181,13 +190,13 @@ For benchmarking, use the `-r` flag with redis-benchmark to test with random key
 This is a limitation of the said operating systems on system time resolution in user space.
 
 ### Currently Not Supported (compared to Redis)
-- Lists (LPUSH, RPOP, etc.)
 - Sets (SADD, SMEMBERS, etc.)
 - Sorted Sets (ZADD, ZRANGE, etc.)
 - Hashes (HSET, HGET, etc.)
 - Pub/Sub (PUBLISH, SUBSCRIBE, etc.)
 - Transactions (MULTI, EXEC)
 - Lua scripting
+- Some list operations (LINSERT, LREM, LSET, LTRIM, BLPOP, BRPOP, etc.)
 
 ## License
 
