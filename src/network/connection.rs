@@ -1,5 +1,7 @@
-use crate::protocol::resp::write_resp_value;
+use crate::config::Config;
+use crate::protocol::resp::{write_resp_value, RespValue};
 use crate::protocol::{Command, CommandExecutor, RespParser};
+use bytes::Bytes;
 use feoxdb::FeoxStore;
 use std::os::fd::RawFd;
 use std::sync::Arc;
@@ -14,6 +16,10 @@ pub struct Connection {
     parser: RespParser,
     executor: CommandExecutor,
 
+    // Authentication state
+    authenticated: bool,
+    auth_required: bool,
+
     // Single consolidated write buffer for better performance
     write_buffer: Vec<u8>,
     write_position: usize,
@@ -27,12 +33,16 @@ pub struct Connection {
 
 impl Connection {
     /// Create a new connection handler
-    pub fn new(fd: RawFd, buffer_size: usize, store: Arc<FeoxStore>) -> Self {
-        let executor = CommandExecutor::new(store);
+    pub fn new(fd: RawFd, buffer_size: usize, store: Arc<FeoxStore>, config: &Config) -> Self {
+        let executor = CommandExecutor::new(store, config);
+        let auth_required = config.auth_required();
+
         Self {
             fd,
             parser: RespParser::new(),
             executor,
+            authenticated: !auth_required, // If no auth required, consider authenticated
+            auth_required,
             write_buffer: Vec::with_capacity(buffer_size),
             write_position: 0,
             pipeline_depth: 0,
@@ -55,6 +65,16 @@ impl Connection {
                 libc::close(self.fd);
             }
         }
+    }
+
+    /// Set authentication status
+    pub fn set_authenticated(&mut self, authenticated: bool) {
+        self.authenticated = authenticated;
+    }
+
+    /// Check if connection is authenticated
+    pub fn is_authenticated(&self) -> bool {
+        !self.auth_required || self.authenticated
     }
 
     /// Process incoming data with inline execution
@@ -82,8 +102,36 @@ impl Connection {
                 return Ok(());
             }
 
-            // Execute command and write response directly to buffer
-            let response = self.executor.execute(command);
+            // Check authentication for non-AUTH commands
+            let response = if !self.authenticated && !matches!(command, Command::Auth(_)) {
+                // Allow PING without auth (Redis-compatible)
+                if matches!(command, Command::Ping(_)) {
+                    self.executor.execute(command)
+                } else {
+                    RespValue::Error("-NOAUTH Authentication required.".to_string())
+                }
+            } else {
+                // Special handling for AUTH command
+                if let Command::Auth(password) = &command {
+                    // Check if password is configured
+                    if !self.auth_required {
+                        RespValue::Error(
+                            "-ERR Client sent AUTH, but no password is set".to_string(),
+                        )
+                    } else {
+                        let password_str = String::from_utf8_lossy(password);
+                        if self.executor.check_auth(&password_str) {
+                            self.set_authenticated(true);
+                            RespValue::SimpleString(Bytes::from_static(b"OK"))
+                        } else {
+                            RespValue::Error("-ERR invalid password".to_string())
+                        }
+                    }
+                } else {
+                    self.executor.execute(command)
+                }
+            };
+
             write_resp_value(&mut self.write_buffer, &response);
 
             self.pipeline_depth += 1;

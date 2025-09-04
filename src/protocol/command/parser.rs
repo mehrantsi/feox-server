@@ -298,6 +298,14 @@ pub fn parse_command(value: RespValue) -> Result<Command, String> {
                     })
                 }
 
+                b"AUTH" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'AUTH' command".to_string());
+                    }
+                    let password = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::Auth(password))
+                }
+
                 _ => Err(format!(
                     "unknown command '{}'",
                     String::from_utf8_lossy(&cmd_name)

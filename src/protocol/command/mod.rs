@@ -78,6 +78,9 @@ pub enum Command {
         expected: Bytes,
         new_value: Bytes,
     },
+
+    // Authentication
+    Auth(Vec<u8>),
 }
 
 impl Command {

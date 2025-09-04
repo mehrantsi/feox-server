@@ -44,6 +44,11 @@ pub struct Config {
 
     /// Log level
     pub log_level: String,
+
+    /// Password for AUTH command (Redis-compatible)
+    /// None means no authentication required
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requirepass: Option<String>,
 }
 
 impl Default for Config {
@@ -62,6 +67,7 @@ impl Default for Config {
             enable_ttl: true,
             file_size: Some(10 * 1024 * 1024 * 1024), // 10GB default for persistent storage
             log_level: "info".to_string(),
+            requirepass: None,
         }
     }
 }
@@ -81,7 +87,17 @@ impl Config {
     /// ```
     pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let contents = fs::read_to_string(path)?;
-        let config = toml::from_str(&contents)?;
+        let mut config: Config = toml::from_str(&contents)?;
+
+        // Load password from environment if not in config file
+        if config.requirepass.is_none() {
+            if let Ok(password) = std::env::var("FEOX_AUTH_PASSWORD") {
+                config.requirepass = Some(password);
+                // Clear from environment after reading
+                std::env::remove_var("FEOX_AUTH_PASSWORD");
+            }
+        }
+
         Ok(config)
     }
 
@@ -108,4 +124,30 @@ impl Config {
 
         Ok(())
     }
+
+    /// Check if authentication is required
+    pub fn auth_required(&self) -> bool {
+        self.requirepass.is_some()
+    }
+
+    /// Validate password (constant-time comparison)
+    pub fn check_password(&self, password: &str) -> bool {
+        match &self.requirepass {
+            Some(correct) => constant_time_eq(password.as_bytes(), correct.as_bytes()),
+            None => false,
+        }
+    }
+}
+
+/// Constant-time string comparison to prevent timing attacks
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut result = 0u8;
+    for (byte_a, byte_b) in a.iter().zip(b.iter()) {
+        result |= byte_a ^ byte_b;
+    }
+    result == 0
 }
