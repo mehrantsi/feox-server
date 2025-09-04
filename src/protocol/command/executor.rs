@@ -1,3 +1,4 @@
+use super::list::ListOperations;
 use super::Command;
 use crate::config::Config;
 use crate::protocol::resp::RespValue;
@@ -78,6 +79,7 @@ fn extract_prefix(pattern: &str) -> &str {
 /// Translates between Redis protocol semantics and FeOx operations.
 pub struct CommandExecutor {
     store: Arc<FeoxStore>,
+    list_ops: ListOperations,
     config: Config, // Store config for auth checking
     start_time: std::time::Instant,
     commands_processed: Arc<std::sync::atomic::AtomicU64>,
@@ -86,8 +88,10 @@ pub struct CommandExecutor {
 impl CommandExecutor {
     /// Create a new command executor with the given store and config
     pub fn new(store: Arc<FeoxStore>, config: &Config) -> Self {
+        let list_ops = ListOperations::new(Arc::clone(&store));
         Self {
             store,
+            list_ops,
             config: config.clone(),
             start_time: std::time::Instant::now(),
             commands_processed: Arc::new(std::sync::atomic::AtomicU64::new(0)),
@@ -670,6 +674,73 @@ impl CommandExecutor {
                     Err(e) => RespValue::Error(format!("ERR {}", e)),
                 }
             }
+
+            Command::LPush { key, values } => match self.list_ops.lpush(&key, values) {
+                Ok(count) => RespValue::Integer(count),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::RPush { key, values } => match self.list_ops.rpush(&key, values) {
+                Ok(count) => RespValue::Integer(count),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::LPop { key, count } => match self.list_ops.lpop(&key, count) {
+                Ok(values) => {
+                    if values.is_empty() {
+                        RespValue::BulkString(None)
+                    } else if values.len() == 1 {
+                        RespValue::BulkString(Some(values.into_iter().next().unwrap()))
+                    } else {
+                        RespValue::Array(Some(
+                            values
+                                .into_iter()
+                                .map(|v| RespValue::BulkString(Some(v)))
+                                .collect(),
+                        ))
+                    }
+                }
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::RPop { key, count } => match self.list_ops.rpop(&key, count) {
+                Ok(values) => {
+                    if values.is_empty() {
+                        RespValue::BulkString(None)
+                    } else if values.len() == 1 {
+                        RespValue::BulkString(Some(values.into_iter().next().unwrap()))
+                    } else {
+                        RespValue::Array(Some(
+                            values
+                                .into_iter()
+                                .map(|v| RespValue::BulkString(Some(v)))
+                                .collect(),
+                        ))
+                    }
+                }
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::LLen(key) => match self.list_ops.llen(&key) {
+                Ok(count) => RespValue::Integer(count),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::LRange { key, start, stop } => match self.list_ops.lrange(&key, start, stop) {
+                Ok(values) => RespValue::Array(Some(
+                    values
+                        .into_iter()
+                        .map(|v| RespValue::BulkString(Some(v)))
+                        .collect(),
+                )),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::LIndex { key, index } => match self.list_ops.lindex(&key, index) {
+                Ok(Some(value)) => RespValue::BulkString(Some(value)),
+                Ok(None) => RespValue::BulkString(None),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
 
             Command::Auth(_) => {
                 // This should be handled in connection.rs
