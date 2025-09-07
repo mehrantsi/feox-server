@@ -151,9 +151,11 @@ impl Connection {
         // Feed data to parser
         self.parser.feed(data);
 
-        // Clear buffer for new batch of responses
-        self.write_buffer.clear();
-        self.write_position = 0;
+        // Only clear buffer if all previous writes have been consumed
+        if self.write_position >= self.write_buffer.len() {
+            self.write_buffer.clear();
+            self.write_position = 0;
+        }
 
         // Parse and execute commands inline
         while let Some(resp_value) = self
