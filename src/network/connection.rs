@@ -127,9 +127,6 @@ impl Connection {
     pub fn close(&mut self) {
         if !self.closed {
             self.closed = true;
-            unsafe {
-                libc::close(self.fd);
-            }
         }
     }
 
@@ -151,11 +148,9 @@ impl Connection {
         // Feed data to parser
         self.parser.feed(data);
 
-        // Only clear buffer if all previous writes have been consumed
-        if self.write_position >= self.write_buffer.len() {
-            self.write_buffer.clear();
-            self.write_position = 0;
-        }
+        // Clear buffer for new batch of responses
+        self.write_buffer.clear();
+        self.write_position = 0;
 
         // Parse and execute commands inline
         while let Some(resp_value) = self
@@ -298,11 +293,5 @@ impl Connection {
             let resp = message.to_resp();
             write_resp_value(&mut self.write_buffer, &resp);
         }
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        self.close();
     }
 }
