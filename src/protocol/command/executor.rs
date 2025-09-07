@@ -1,5 +1,7 @@
+use super::client::ClientOperations;
 use super::list::ListOperations;
 use super::Command;
+use crate::client_registry::ClientRegistry;
 use crate::config::Config;
 use crate::protocol::resp::RespValue;
 use bytes::Bytes;
@@ -77,12 +79,15 @@ fn extract_prefix(pattern: &str) -> &str {
 /// Executes parsed Redis commands against a FeoxStore
 ///
 /// Translates between Redis protocol semantics and FeOx operations.
+#[derive(Clone)]
 pub struct CommandExecutor {
     store: Arc<FeoxStore>,
     list_ops: ListOperations,
+    client_ops: ClientOperations,
     config: Config, // Store config for auth checking
     start_time: std::time::Instant,
     commands_processed: Arc<std::sync::atomic::AtomicU64>,
+    connection_id: Option<usize>,
 }
 
 impl CommandExecutor {
@@ -92,10 +97,19 @@ impl CommandExecutor {
         Self {
             store,
             list_ops,
+            client_ops: ClientOperations::new(),
             config: config.clone(),
             start_time: std::time::Instant::now(),
             commands_processed: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            connection_id: None,
         }
+    }
+
+    /// Set the client registry and connection ID for CLIENT command support
+    pub fn with_client_info(mut self, registry: Arc<ClientRegistry>, connection_id: usize) -> Self {
+        self.client_ops = ClientOperations::with_registry(registry);
+        self.connection_id = Some(connection_id);
+        self
     }
 
     /// Check if password is correct
@@ -752,6 +766,23 @@ impl CommandExecutor {
                     RespValue::Error("-ERR AUTH failed".to_string())
                 }
             }
+
+            Command::Client {
+                ref subcommand,
+                ref args,
+            } => self
+                .client_ops
+                .execute(subcommand, args, self.connection_id),
+
+            // Pub/Sub commands are handled in connection.rs
+            Command::Subscribe(_)
+            | Command::Unsubscribe(_)
+            | Command::PSubscribe(_)
+            | Command::PUnsubscribe(_)
+            | Command::Publish { .. }
+            | Command::PubSub { .. } => RespValue::Error(
+                "-ERR Pub/Sub commands should be handled in connection layer".to_string(),
+            ),
         }
     }
 }

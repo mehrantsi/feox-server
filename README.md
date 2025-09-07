@@ -6,22 +6,39 @@ Ultra-fast Redis-compatible server powered by FeOxDB with sub-microsecond latenc
 
 ## Features
 
-- **Extreme Performance**: 3.7M+ SET/s, 5M+ GET/s with pipelining
+- **Extreme Performance**: 3.8M+ SET/s, 5M+ GET/s (redis-benchmark with 50 clients and pipeline depth 64)
 - **Redis Protocol Compatible**: Drop-in replacement for Redis workloads
-- **Sub-microsecond Latency**: Inherits FeOxDB's <200ns GET operations
 - **Thread-per-Core Architecture**: Scales linearly with CPU cores
 - **Lock-Free Operations**: Built on FeOxDB's lock-free data structures
 
 ## Performance
 
-Benchmarked on a standard development machine with 16 cores:
+### Real-World Benchmark Results
 
-| Operation | Requests/sec | Latency (p50) |
-|-----------|-------------|---------------|
-| SET       | 3,770,000   | 0.62ms        |
-| GET       | 5,000,000   | 0.35ms        |
+Testing with `memtier_benchmark` on macOS (16 cores, 50 clients, 100K requests, pipeline 16):
 
-*Using redis-benchmark with 50 clients, pipeline depth 64, and 1M random keys*
+| Workload | FeOx (ops/sec) | Redis (ops/sec) | Speedup | FeOx p50 | Redis p50 |
+|----------|----------------|-----------------|---------|----------|-----------|
+| **Cache Simulation** (50% SET, 50% GET) | 2,980,228 | 1,492,622 | **2.0x** | 1.09ms | 2.08ms |
+| **Session Store** (25% SET, 75% GET) | 3,002,196 | 1,601,475 | **1.9x** | 1.06ms | 1.91ms |
+| **Content Cache** (10% SET, 90% GET) | 2,785,080 | 1,370,185 | **2.0x** | 1.13ms | 2.27ms |
+| **Pub/Sub** (PUBLISH only) | 138,000 | 142,857 | 0.97x | 0.047ms | 0.039ms |
+
+### Highlights
+
+- **2x faster** for typical cache workloads with **45-50% lower latency**
+- **Consistent performance** across different read/write ratios
+- **Better p99 latency** consistency under load
+
+### Testing Methodology
+
+- **Tool**: `memtier_benchmark` - industry standard Redis benchmarking tool
+- **Configuration**: 
+  - 50 concurrent clients
+  - 100,000 requests per test
+  - Pipeline depth of 16
+  - 10,000 unique keys
+  - 100-byte values
 
 ## Quick Start
 
@@ -99,6 +116,16 @@ EXPIRE key 60
 - `MGET key [key ...]` - Get multiple values
 - `MSET key value [key value ...]` - Set multiple key-value pairs
 
+### Pub/Sub Operations
+- `SUBSCRIBE channel [channel ...]` - Subscribe to channels
+- `UNSUBSCRIBE [channel ...]` - Unsubscribe from channels
+- `PSUBSCRIBE pattern [pattern ...]` - Subscribe to channel patterns
+- `PUNSUBSCRIBE [pattern ...]` - Unsubscribe from patterns
+- `PUBLISH channel message` - Publish message to channel
+- `PUBSUB CHANNELS [pattern]` - List active channels
+- `PUBSUB NUMSUB [channel ...]` - Get subscriber count for channels
+- `PUBSUB NUMPAT` - Get pattern subscriber count
+
 ### Server Commands
 - `AUTH password` - Authenticate connection
 - `PING [message]` - Test connection
@@ -106,6 +133,16 @@ EXPIRE key 60
 - `CONFIG GET/SET` - Configuration management
 - `KEYS pattern` - Find keys by pattern
 - `SCAN cursor [MATCH pattern] [COUNT count]` - Incremental key iteration
+
+### Client Management Commands
+- `CLIENT ID` - Returns the current connection ID
+- `CLIENT LIST` - Lists all connected clients with detailed information
+- `CLIENT INFO` - Returns information about the current connection
+- `CLIENT SETNAME name` - Sets a name for the current connection
+- `CLIENT GETNAME` - Returns the name of the current connection
+- `CLIENT KILL [ID id] [ADDR addr] [TYPE type]` - Terminates client connections
+- `CLIENT PAUSE timeout` - Suspends command processing for all clients
+- `CLIENT UNPAUSE` - Resumes command processing for all clients
 
 ### FeOx-Specific
 - `JSONPATCH key patch` - Apply JSON Patch (RFC 6902)
@@ -187,16 +224,16 @@ When multiple clients rapidly update the same key simultaneously, you may encoun
 
 For benchmarking, use the `-r` flag with redis-benchmark to test with random keys
 
-This is a limitation of the said operating systems on system time resolution in user space.
+This is a limitation of the said OS on system time resolution in user space.
 
 ### Currently Not Supported (compared to Redis)
 - Sets (SADD, SMEMBERS, etc.)
 - Sorted Sets (ZADD, ZRANGE, etc.)
 - Hashes (HSET, HGET, etc.)
-- Pub/Sub (PUBLISH, SUBSCRIBE, etc.)
 - Transactions (MULTI, EXEC)
 - Lua scripting
 - Some list operations (LINSERT, LREM, LSET, LTRIM, BLPOP, BRPOP, etc.)
+- Some client operations (CLIENT CACHING, CLIENT TRACKING, CLIENT GETREDIR, etc.)
 
 ## License
 

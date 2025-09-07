@@ -383,6 +383,97 @@ pub fn parse_command(value: RespValue) -> Result<Command, String> {
                     Ok(Command::Auth(password))
                 }
 
+                b"SUBSCRIBE" => {
+                    if args.is_empty() {
+                        return Err("wrong number of arguments for 'SUBSCRIBE' command".to_string());
+                    }
+                    let channels = args
+                        .into_iter()
+                        .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::Subscribe(channels))
+                }
+
+                b"UNSUBSCRIBE" => {
+                    let channels = if args.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            args.into_iter()
+                                .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        )
+                    };
+                    Ok(Command::Unsubscribe(channels))
+                }
+
+                b"PSUBSCRIBE" => {
+                    if args.is_empty() {
+                        return Err(
+                            "wrong number of arguments for 'PSUBSCRIBE' command".to_string()
+                        );
+                    }
+                    let patterns = args
+                        .into_iter()
+                        .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::PSubscribe(patterns))
+                }
+
+                b"PUNSUBSCRIBE" => {
+                    let patterns = if args.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            args.into_iter()
+                                .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        )
+                    };
+                    Ok(Command::PUnsubscribe(patterns))
+                }
+
+                b"PUBLISH" => {
+                    if args.len() != 2 {
+                        return Err("wrong number of arguments for 'PUBLISH' command".to_string());
+                    }
+                    let channel = extract_bytes(&args[0])?.to_vec();
+                    let message = extract_bytes(&args[1])?.to_vec();
+                    Ok(Command::Publish { channel, message })
+                }
+
+                b"PUBSUB" => {
+                    if args.is_empty() {
+                        return Err("wrong number of arguments for 'PUBSUB' command".to_string());
+                    }
+                    let subcommand = String::from_utf8_lossy(&extract_bytes(&args[0])?).to_string();
+                    let subargs = args
+                        .into_iter()
+                        .skip(1)
+                        .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::PubSub {
+                        subcommand,
+                        args: subargs,
+                    })
+                }
+
+                b"CLIENT" => {
+                    if args.is_empty() {
+                        return Err("wrong number of arguments for 'CLIENT' command".to_string());
+                    }
+                    let subcommand = String::from_utf8_lossy(&extract_bytes(&args[0])?).to_string();
+                    let subargs = args
+                        .into_iter()
+                        .skip(1)
+                        .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::Client {
+                        subcommand,
+                        args: subargs,
+                    })
+                }
+
                 _ => Err(format!(
                     "unknown command '{}'",
                     String::from_utf8_lossy(&cmd_name)
