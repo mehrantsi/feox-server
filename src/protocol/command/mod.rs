@@ -1,6 +1,7 @@
 use crate::protocol::resp::RespValue;
 use bytes::Bytes;
 
+mod client;
 mod executor;
 mod list;
 mod parser;
@@ -110,6 +111,25 @@ pub enum Command {
         key: Vec<u8>,
         index: i64,
     },
+
+    Subscribe(Vec<Vec<u8>>),
+    Unsubscribe(Option<Vec<Vec<u8>>>),
+    PSubscribe(Vec<Vec<u8>>),
+    PUnsubscribe(Option<Vec<Vec<u8>>>),
+    Publish {
+        channel: Vec<u8>,
+        message: Vec<u8>,
+    },
+    PubSub {
+        subcommand: String,
+        args: Vec<Vec<u8>>,
+    },
+
+    // Client management
+    Client {
+        subcommand: String,
+        args: Vec<Vec<u8>>,
+    },
 }
 
 impl Command {
@@ -117,5 +137,55 @@ impl Command {
     #[inline(always)]
     pub fn from_resp(value: RespValue) -> Result<Self, String> {
         parser::parse_command(value)
+    }
+
+    /// Check if this is a pub/sub command
+    pub fn is_pubsub_command(&self) -> bool {
+        matches!(
+            self,
+            Command::Subscribe(_)
+                | Command::Unsubscribe(_)
+                | Command::PSubscribe(_)
+                | Command::PUnsubscribe(_)
+                | Command::Publish { .. }
+                | Command::PubSub { .. }
+        )
+    }
+
+    /// Check if this command is allowed in pub/sub mode
+    pub fn is_allowed_in_pubsub_mode(&self) -> bool {
+        matches!(
+            self,
+            Command::Subscribe(_)
+                | Command::Unsubscribe(_)
+                | Command::PSubscribe(_)
+                | Command::PUnsubscribe(_)
+                | Command::Ping(_)
+                | Command::Quit
+        )
+    }
+
+    /// Convert to PubSubOp if this is a pub/sub command
+    pub fn to_pubsub_op(self) -> Option<crate::network::PubSubOp> {
+        match self {
+            Command::Subscribe(channels) => Some(crate::network::PubSubOp::Subscribe(channels)),
+            Command::Unsubscribe(channels) => Some(crate::network::PubSubOp::Unsubscribe(channels)),
+            Command::PSubscribe(patterns) => Some(crate::network::PubSubOp::PSubscribe(patterns)),
+            Command::PUnsubscribe(patterns) => {
+                Some(crate::network::PubSubOp::PUnsubscribe(patterns))
+            }
+            Command::Publish { channel, message } => {
+                Some(crate::network::PubSubOp::Publish { channel, message })
+            }
+            Command::PubSub { subcommand, args } => match subcommand.to_uppercase().as_str() {
+                "CHANNELS" => Some(crate::network::PubSubOp::PubSubChannels {
+                    pattern: args.first().cloned(),
+                }),
+                "NUMSUB" => Some(crate::network::PubSubOp::PubSubNumSub { channels: args }),
+                "NUMPAT" => Some(crate::network::PubSubOp::PubSubNumPat),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }

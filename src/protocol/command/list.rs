@@ -6,6 +6,7 @@ use std::sync::Arc;
 const INITIAL_POSITION: i64 = 1_000_000_000;
 const MAX_RETRIES: usize = 10;
 
+#[derive(Clone)]
 pub struct ListOperations {
     store: Arc<FeoxStore>,
 }
