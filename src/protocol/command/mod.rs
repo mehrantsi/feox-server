@@ -130,6 +130,13 @@ pub enum Command {
         subcommand: String,
         args: Vec<Vec<u8>>,
     },
+
+    // Transaction commands
+    Multi,
+    Exec,
+    Discard,
+    Watch(Vec<Vec<u8>>),
+    Unwatch,
 }
 
 impl Command {

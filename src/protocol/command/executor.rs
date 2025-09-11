@@ -783,6 +783,15 @@ impl CommandExecutor {
             | Command::PubSub { .. } => RespValue::Error(
                 "-ERR Pub/Sub commands should be handled in connection layer".to_string(),
             ),
+
+            // Transaction commands are handled in connection.rs
+            Command::Multi
+            | Command::Exec
+            | Command::Discard
+            | Command::Watch(_)
+            | Command::Unwatch => RespValue::Error(
+                "-ERR Transaction commands should be handled in connection layer".to_string(),
+            ),
         }
     }
 }

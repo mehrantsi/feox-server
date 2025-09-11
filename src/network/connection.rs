@@ -4,11 +4,17 @@ use crate::protocol::{Command, CommandExecutor, RespParser};
 use crate::pubsub::PubSubMessage;
 use bytes::Bytes;
 use feoxdb::FeoxStore;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, PartialEq)]
+enum TransactionState {
+    None,
+    Queuing,
+}
 
 #[derive(Debug)]
 pub enum PubSubOp {
@@ -58,6 +64,11 @@ pub struct Connection {
     pub last_command_at: u64, // Unix timestamp in seconds
     pub commands_processed: u64,
     pub flags: Vec<String>, // Client flags (e.g., "pubsub", "master", "replica")
+
+    // Transaction state
+    transaction_state: TransactionState,
+    queued_commands: Vec<Command>,
+    watched_keys: HashSet<Vec<u8>>,
 }
 
 impl Connection {
@@ -113,6 +124,9 @@ impl Connection {
             last_command_at: now,
             commands_processed: 0,
             flags: Vec::new(),
+            transaction_state: TransactionState::None,
+            queued_commands: Vec::new(),
+            watched_keys: HashSet::new(),
         }
     }
 
@@ -148,9 +162,11 @@ impl Connection {
         // Feed data to parser
         self.parser.feed(data);
 
-        // Clear buffer for new batch of responses
-        self.write_buffer.clear();
-        self.write_position = 0;
+        // Only clear buffer if all previous writes have been consumed
+        if self.write_position >= self.write_buffer.len() {
+            self.write_buffer.clear();
+            self.write_position = 0;
+        }
 
         // Parse and execute commands inline
         while let Some(resp_value) = self
@@ -194,6 +210,105 @@ impl Connection {
                 if subcommand.to_uppercase() == "SETNAME" && !args.is_empty() {
                     self.client_name = Some(String::from_utf8_lossy(&args[0]).to_string());
                 }
+            }
+
+            // Handle transaction commands
+            match command {
+                Command::Multi => {
+                    if self.transaction_state == TransactionState::Queuing {
+                        write_resp_value(
+                            &mut self.write_buffer,
+                            &RespValue::Error("-ERR MULTI calls can not be nested".to_string()),
+                        );
+                        continue;
+                    }
+                    self.transaction_state = TransactionState::Queuing;
+                    self.queued_commands.clear();
+                    write_resp_value(
+                        &mut self.write_buffer,
+                        &RespValue::SimpleString(Bytes::from_static(b"OK")),
+                    );
+                    continue;
+                }
+                Command::Exec => {
+                    if self.transaction_state != TransactionState::Queuing {
+                        write_resp_value(
+                            &mut self.write_buffer,
+                            &RespValue::Error("-ERR EXEC without MULTI".to_string()),
+                        );
+                        continue;
+                    }
+                    
+                    // Execute all queued commands
+                    let mut results = Vec::new();
+                    for queued_cmd in self.queued_commands.drain(..) {
+                        results.push(self.executor.execute(queued_cmd));
+                    }
+                    
+                    self.transaction_state = TransactionState::None;
+                    self.watched_keys.clear();
+                    
+                    write_resp_value(
+                        &mut self.write_buffer,
+                        &RespValue::Array(Some(results)),
+                    );
+                    continue;
+                }
+                Command::Discard => {
+                    if self.transaction_state != TransactionState::Queuing {
+                        write_resp_value(
+                            &mut self.write_buffer,
+                            &RespValue::Error("-ERR DISCARD without MULTI".to_string()),
+                        );
+                        continue;
+                    }
+                    
+                    self.transaction_state = TransactionState::None;
+                    self.queued_commands.clear();
+                    self.watched_keys.clear();
+                    
+                    write_resp_value(
+                        &mut self.write_buffer,
+                        &RespValue::SimpleString(Bytes::from_static(b"OK")),
+                    );
+                    continue;
+                }
+                Command::Watch(ref keys) => {
+                    if self.transaction_state == TransactionState::Queuing {
+                        write_resp_value(
+                            &mut self.write_buffer,
+                            &RespValue::Error("-ERR WATCH inside MULTI is not allowed".to_string()),
+                        );
+                        continue;
+                    }
+                    for key in keys {
+                        self.watched_keys.insert(key.clone());
+                    }
+                    write_resp_value(
+                        &mut self.write_buffer,
+                        &RespValue::SimpleString(Bytes::from_static(b"OK")),
+                    );
+                    continue;
+                }
+                Command::Unwatch => {
+                    self.watched_keys.clear();
+                    write_resp_value(
+                        &mut self.write_buffer,
+                        &RespValue::SimpleString(Bytes::from_static(b"OK")),
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+
+            // If in transaction, queue the command
+            if self.transaction_state == TransactionState::Queuing {
+                self.queued_commands.push(command);
+                write_resp_value(
+                    &mut self.write_buffer,
+                    &RespValue::SimpleString(Bytes::from_static(b"QUEUED")),
+                );
+                continue;
             }
 
             // Check authentication for non-AUTH commands

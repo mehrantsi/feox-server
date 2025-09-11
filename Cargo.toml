@@ -1,6 +1,6 @@
 [package]
 name = "feox-server"
-version = "0.4.2"
+version = "0.5.0"
 edition = "2021"
 authors = ["Mehran Toosi"]
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ name = "feox-server"
 path = "src/bin/server.rs"
 
 [dependencies]
-feoxdb = "0.4.1"
+feoxdb = "0.4.2"
 bytes = "1.9"
 libc = "0.2"
 nix = { version = "0.29", features = ["net", "sched"] }

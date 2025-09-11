@@ -474,6 +474,45 @@ pub fn parse_command(value: RespValue) -> Result<Command, String> {
                     })
                 }
 
+                b"MULTI" => {
+                    if !args.is_empty() {
+                        return Err("wrong number of arguments for 'MULTI' command".to_string());
+                    }
+                    Ok(Command::Multi)
+                }
+
+                b"EXEC" => {
+                    if !args.is_empty() {
+                        return Err("wrong number of arguments for 'EXEC' command".to_string());
+                    }
+                    Ok(Command::Exec)
+                }
+
+                b"DISCARD" => {
+                    if !args.is_empty() {
+                        return Err("wrong number of arguments for 'DISCARD' command".to_string());
+                    }
+                    Ok(Command::Discard)
+                }
+
+                b"WATCH" => {
+                    if args.is_empty() {
+                        return Err("wrong number of arguments for 'WATCH' command".to_string());
+                    }
+                    let keys = args
+                        .into_iter()
+                        .map(|arg| extract_bytes(&arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::Watch(keys))
+                }
+
+                b"UNWATCH" => {
+                    if !args.is_empty() {
+                        return Err("wrong number of arguments for 'UNWATCH' command".to_string());
+                    }
+                    Ok(Command::Unwatch)
+                }
+
                 _ => Err(format!(
                     "unknown command '{}'",
                     String::from_utf8_lossy(&cmd_name)
