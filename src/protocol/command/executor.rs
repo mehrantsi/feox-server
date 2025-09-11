@@ -116,6 +116,18 @@ impl CommandExecutor {
     pub fn check_auth(&self, password: &str) -> bool {
         self.config.check_password(password)
     }
+    
+    /// Fast-path SET operation - bypasses command parsing
+    #[inline(always)]
+    pub fn fast_set(&self, key: &[u8], value: &[u8]) -> Result<(), feoxdb::FeoxError> {
+        self.store.insert_with_timestamp(key, value, None)
+    }
+    
+    /// Fast-path GET operation - bypasses command parsing  
+    #[inline(always)]
+    pub fn fast_get(&self, key: &[u8]) -> Result<bytes::Bytes, feoxdb::FeoxError> {
+        self.store.get_bytes(key)
+    }
 
     /// Execute a command and return RESP response
     #[inline]

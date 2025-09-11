@@ -180,7 +180,17 @@ impl Connection {
                 .unwrap_or_default()
                 .as_secs();
             self.commands_processed += 1;
-            // Parse command
+            
+            // Fast-path for common commands (SET/GET) if not in transaction
+            if self.transaction_state == TransactionState::None {
+                if let Some(response) = self.try_fast_path(&resp_value) {
+                    self.write_buffer.extend_from_slice(&response);
+                    self.pipeline_depth += 1;
+                    continue;
+                }
+            }
+            
+            // Parse command (slow path)
             let command = Command::from_resp(resp_value).map_err(crate::error::Error::Protocol)?;
 
             // Check for quit
@@ -408,5 +418,85 @@ impl Connection {
             let resp = message.to_resp();
             write_resp_value(&mut self.write_buffer, &resp);
         }
+    }
+    
+    /// Try to handle common commands (SET/GET) via fast path
+    /// Returns Some(response_bytes) if handled, None otherwise
+    #[inline(always)]
+    fn try_fast_path(&self, resp_value: &RespValue) -> Option<Vec<u8>> {
+        // Static response for SET success
+        const OK_RESPONSE: &[u8] = b"+OK\r\n";
+        
+        // Must be an array with at least 2 elements
+        let args = match resp_value {
+            RespValue::Array(Some(args)) if args.len() >= 2 => args,
+            _ => return None,
+        };
+        
+        // Get command name
+        let cmd = match &args[0] {
+            RespValue::BulkString(Some(cmd)) => cmd,
+            _ => return None,
+        };
+        
+        // Check for SET command (3 args minimum: SET key value)
+        if cmd.len() == 3 && cmd.eq_ignore_ascii_case(b"SET") && args.len() >= 3 {
+            // Extract key and value
+            let key = match &args[1] {
+                RespValue::BulkString(Some(k)) => k,
+                _ => return None,
+            };
+            let value = match &args[2] {
+                RespValue::BulkString(Some(v)) => v,
+                _ => return None,
+            };
+            
+            // Simple SET without options - fast path
+            if args.len() == 3 {
+                match self.executor.fast_set(key, value) {
+                    Ok(_) => return Some(OK_RESPONSE.to_vec()),
+                    Err(e) => {
+                        let mut error_resp = Vec::with_capacity(32);
+                        error_resp.extend_from_slice(b"-ERR ");
+                        error_resp.extend_from_slice(e.to_string().as_bytes());
+                        error_resp.extend_from_slice(b"\r\n");
+                        return Some(error_resp);
+                    }
+                }
+            }
+        }
+        
+        // Check for GET command (2 args: GET key)
+        if cmd.len() == 3 && cmd.eq_ignore_ascii_case(b"GET") && args.len() == 2 {
+            let key = match &args[1] {
+                RespValue::BulkString(Some(k)) => k,
+                _ => return None,
+            };
+            
+            match self.executor.fast_get(key) {
+                Ok(value) => {
+                    // Build bulk string response
+                    let mut response = Vec::with_capacity(value.len() + 20);
+                    response.push(b'$');
+                    response.extend_from_slice(value.len().to_string().as_bytes());
+                    response.extend_from_slice(b"\r\n");
+                    response.extend_from_slice(&value);
+                    response.extend_from_slice(b"\r\n");
+                    return Some(response);
+                }
+                Err(feoxdb::FeoxError::KeyNotFound) => {
+                    return Some(b"$-1\r\n".to_vec());
+                }
+                Err(e) => {
+                    let mut error_resp = Vec::with_capacity(32);
+                    error_resp.extend_from_slice(b"-ERR ");
+                    error_resp.extend_from_slice(e.to_string().as_bytes());
+                    error_resp.extend_from_slice(b"\r\n");
+                    return Some(error_resp);
+                }
+            }
+        }
+        
+        None // Not a fast-path command
     }
 }
