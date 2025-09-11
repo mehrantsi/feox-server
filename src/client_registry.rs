@@ -10,7 +10,6 @@ pub struct ClientInfo {
     pub addr: Option<SocketAddr>,
     pub fd: i32,
     pub connected_at: u64,
-    pub last_command_at: u64,
     pub commands_processed: u64,
     pub flags: Vec<String>,
     pub thread_id: usize,
@@ -37,7 +36,6 @@ impl ClientRegistry {
             addr: conn.client_addr,
             fd: conn.fd(),
             connected_at: conn.connected_at,
-            last_command_at: conn.last_command_at,
             commands_processed: conn.commands_processed,
             flags: conn.flags.clone(),
             thread_id,
@@ -50,7 +48,6 @@ impl ClientRegistry {
     pub fn update(&self, conn: &Connection) {
         if let Some(mut entry) = self.clients.get_mut(&conn.connection_id) {
             entry.name = conn.client_name.clone();
-            entry.last_command_at = conn.last_command_at;
             entry.commands_processed = conn.commands_processed;
             entry.flags = conn.flags.clone();
         }

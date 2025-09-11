@@ -63,11 +63,7 @@ impl ClientOperations {
                         .unwrap_or_default()
                         .as_secs()
                         .saturating_sub(client.connected_at),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs()
-                        .saturating_sub(client.last_command_at),
+                    0,
                     if client.flags.is_empty() { "N".to_string() } else { client.flags.join("") },
                     client.db,
                     0,  // subscriptions
@@ -171,11 +167,7 @@ impl ClientOperations {
                         .unwrap_or_default()
                         .as_secs()
                         .saturating_sub(client.connected_at),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs()
-                        .saturating_sub(client.last_command_at),
+                    0,
                     if client.flags.is_empty() { "N".to_string() } else { client.flags.join("") },
                     client.db,
                     0,  // subscriptions

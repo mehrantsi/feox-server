@@ -117,13 +117,19 @@ impl CommandExecutor {
         self.config.check_password(password)
     }
     
-    /// Fast-path SET operation - bypasses command parsing
+    // Fast-path SET operation
     #[inline(always)]
     pub fn fast_set(&self, key: &[u8], value: &[u8]) -> Result<(), feoxdb::FeoxError> {
         self.store.insert_with_timestamp(key, value, None)
     }
     
-    /// Fast-path GET operation - bypasses command parsing  
+    // Fast-path SET operation with Bytes
+    #[inline(always)]
+    pub fn fast_set_bytes(&self, key: &[u8], value: bytes::Bytes) -> Result<(), feoxdb::FeoxError> {
+        self.store.insert_bytes_with_timestamp(key, value, None)
+    }
+    
+    // Fast-path GET operation  
     #[inline(always)]
     pub fn fast_get(&self, key: &[u8]) -> Result<bytes::Bytes, feoxdb::FeoxError> {
         self.store.get_bytes(key)
@@ -145,15 +151,14 @@ impl CommandExecutor {
             },
 
             Command::Set { key, value, ex, px } => {
-                // Pass None to let FeOx generate a new timestamp
                 let result = if let Some(seconds) = ex {
                     self.store
-                        .insert_with_ttl_and_timestamp(&key, &value, seconds, None)
+                        .insert_bytes_with_ttl_and_timestamp(&key, value, seconds, None)
                 } else if let Some(millis) = px {
                     self.store
-                        .insert_with_ttl_and_timestamp(&key, &value, millis / 1000, None)
+                        .insert_bytes_with_ttl_and_timestamp(&key, value, millis / 1000, None)
                 } else {
-                    self.store.insert_with_timestamp(&key, &value, None)
+                    self.store.insert_bytes_with_timestamp(&key, value, None)
                 };
 
                 match result {
