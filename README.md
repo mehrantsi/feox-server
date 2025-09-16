@@ -1,6 +1,6 @@
 # FeOx Server
 
-Ultra-fast Redis-compatible server powered by FeOxDB with sub-microsecond latency.
+Ultra-fast Redis-compatible server powered by FeOxDB.
 
 [📚 FeOxDB Documentation](https://feoxdb.com) | [💬 Issues](https://github.com/mehrantoosi/feox/issues)
 
@@ -12,8 +12,6 @@ Ultra-fast Redis-compatible server powered by FeOxDB with sub-microsecond latenc
 - **Lock-Free Operations**: Built on FeOxDB's lock-free data structures
 
 ## Performance
-
-### Real-World Benchmark Results
 
 Testing with `memtier_benchmark` on macOS (16 cores, 50 clients, 100K requests, pipeline 16):
 
