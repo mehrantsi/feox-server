@@ -474,6 +474,108 @@ pub fn parse_command(value: RespValue) -> Result<Command, String> {
                     })
                 }
 
+                b"HSET" => {
+                    if args.len() < 3 || (args.len() - 1) % 2 != 0 {
+                        return Err("wrong number of arguments for 'HSET' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let num_fields = (args.len() - 1) / 2;
+                    let mut fields = Vec::with_capacity(num_fields);
+                    let mut i = 1;
+                    while i < args.len() {
+                        let field = extract_bytes(&args[i])?.to_vec();
+                        let value = extract_bytes(&args[i + 1])?;
+                        fields.push((field, value));
+                        i += 2;
+                    }
+                    Ok(Command::HSet { key, fields })
+                }
+
+                b"HGET" => {
+                    if args.len() != 2 {
+                        return Err("wrong number of arguments for 'HGET' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let field = extract_bytes(&args[1])?.to_vec();
+                    Ok(Command::HGet { key, field })
+                }
+
+                b"HMGET" => {
+                    if args.len() < 2 {
+                        return Err("wrong number of arguments for 'HMGET' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let fields = args[1..]
+                        .iter()
+                        .map(|arg| extract_bytes(arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::HMGet { key, fields })
+                }
+
+
+                b"HDEL" => {
+                    if args.len() < 2 {
+                        return Err("wrong number of arguments for 'HDEL' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let fields = args[1..]
+                        .iter()
+                        .map(|arg| extract_bytes(arg).map(|b| b.to_vec()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(Command::HDel { key, fields })
+                }
+
+                b"HEXISTS" => {
+                    if args.len() != 2 {
+                        return Err("wrong number of arguments for 'HEXISTS' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let field = extract_bytes(&args[1])?.to_vec();
+                    Ok(Command::HExists { key, field })
+                }
+
+                b"HGETALL" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'HGETALL' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::HGetAll(key))
+                }
+
+                b"HLEN" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'HLEN' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::HLen(key))
+                }
+
+                b"HKEYS" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'HKEYS' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::HKeys(key))
+                }
+
+                b"HVALS" => {
+                    if args.len() != 1 {
+                        return Err("wrong number of arguments for 'HVALS' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    Ok(Command::HVals(key))
+                }
+
+                b"HINCRBY" => {
+                    if args.len() != 3 {
+                        return Err("wrong number of arguments for 'HINCRBY' command".to_string());
+                    }
+                    let key = extract_bytes(&args[0])?.to_vec();
+                    let field = extract_bytes(&args[1])?.to_vec();
+                    let delta = extract_integer(&args[2])?;
+                    Ok(Command::HIncrBy { key, field, delta })
+                }
+
                 b"MULTI" => {
                     if !args.is_empty() {
                         return Err("wrong number of arguments for 'MULTI' command".to_string());

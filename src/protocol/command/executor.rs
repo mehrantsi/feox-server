@@ -1,4 +1,5 @@
 use super::client::ClientOperations;
+use super::hash::HashOperations;
 use super::list::ListOperations;
 use super::Command;
 use crate::client_registry::ClientRegistry;
@@ -83,6 +84,7 @@ fn extract_prefix(pattern: &str) -> &str {
 pub struct CommandExecutor {
     store: Arc<FeoxStore>,
     list_ops: ListOperations,
+    hash_ops: HashOperations,
     client_ops: ClientOperations,
     config: Config, // Store config for auth checking
     start_time: std::time::Instant,
@@ -94,9 +96,11 @@ impl CommandExecutor {
     /// Create a new command executor with the given store and config
     pub fn new(store: Arc<FeoxStore>, config: &Config) -> Self {
         let list_ops = ListOperations::new(Arc::clone(&store));
+        let hash_ops = HashOperations::new(Arc::clone(&store));
         Self {
             store,
             list_ops,
+            hash_ops,
             client_ops: ClientOperations::new(),
             config: config.clone(),
             start_time: std::time::Instant::now(),
@@ -116,20 +120,22 @@ impl CommandExecutor {
     pub fn check_auth(&self, password: &str) -> bool {
         self.config.check_password(password)
     }
-    
+
     // Fast-path SET operation
     #[inline(always)]
     pub fn fast_set(&self, key: &[u8], value: &[u8]) -> Result<(), feoxdb::FeoxError> {
-        self.store.insert_with_timestamp(key, value, None)
+        self.store.insert_with_timestamp(key, value, None)?;
+        Ok(())
     }
-    
+
     // Fast-path SET operation with Bytes
     #[inline(always)]
     pub fn fast_set_bytes(&self, key: &[u8], value: bytes::Bytes) -> Result<(), feoxdb::FeoxError> {
-        self.store.insert_bytes_with_timestamp(key, value, None)
+        self.store.insert_bytes_with_timestamp(key, value, None)?;
+        Ok(())
     }
-    
-    // Fast-path GET operation  
+
+    // Fast-path GET operation
     #[inline(always)]
     pub fn fast_get(&self, key: &[u8]) -> Result<bytes::Bytes, feoxdb::FeoxError> {
         self.store.get_bytes(key)
@@ -772,6 +778,85 @@ impl CommandExecutor {
                 Ok(None) => RespValue::BulkString(None),
                 Err(e) => RespValue::Error(format!("ERR {}", e)),
             },
+
+            Command::HSet { key, fields } => {
+                let field_refs = fields.iter().map(|(f, v)| (f.as_slice(), v.clone()));
+                match self.hash_ops.hset(&key, field_refs) {
+                    Ok(count) => RespValue::Integer(count),
+                    Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
+
+            Command::HGet { key, field } => match self.hash_ops.hget(&key, &field) {
+                Ok(Some(value)) => RespValue::BulkString(Some(value)),
+                Ok(None) => RespValue::BulkString(None),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HMGet { key, fields } => match self.hash_ops.hmget(&key, fields) {
+                Ok(values) => RespValue::Array(Some(
+                    values
+                        .into_iter()
+                        .map(|v| match v {
+                            Some(val) => RespValue::BulkString(Some(val)),
+                            None => RespValue::BulkString(None),
+                        })
+                        .collect(),
+                )),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HDel { key, fields } => match self.hash_ops.hdel(&key, fields) {
+                Ok(count) => RespValue::Integer(count),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HExists { key, field } => match self.hash_ops.hexists(&key, &field) {
+                Ok(exists) => RespValue::Integer(if exists { 1 } else { 0 }),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HGetAll(key) => match self.hash_ops.hgetall(&key) {
+                Ok(pairs) => {
+                    let mut result = Vec::new();
+                    for (field, value) in pairs {
+                        result.push(RespValue::BulkString(Some(Bytes::from(field))));
+                        result.push(RespValue::BulkString(Some(value)));
+                    }
+                    RespValue::Array(Some(result))
+                }
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HLen(key) => match self.hash_ops.hlen(&key) {
+                Ok(count) => RespValue::Integer(count),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HKeys(key) => match self.hash_ops.hkeys(&key) {
+                Ok(keys) => RespValue::Array(Some(
+                    keys.into_iter()
+                        .map(|k| RespValue::BulkString(Some(Bytes::from(k))))
+                        .collect(),
+                )),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HVals(key) => match self.hash_ops.hvals(&key) {
+                Ok(vals) => RespValue::Array(Some(
+                    vals.into_iter()
+                        .map(|v| RespValue::BulkString(Some(v)))
+                        .collect(),
+                )),
+                Err(e) => RespValue::Error(format!("ERR {}", e)),
+            },
+
+            Command::HIncrBy { key, field, delta } => {
+                match self.hash_ops.hincrby(&key, &field, delta) {
+                    Ok(new_value) => RespValue::Integer(new_value),
+                    Err(e) => RespValue::Error(format!("ERR {}", e)),
+                }
+            }
 
             Command::Auth(_) => {
                 // This should be handled in connection.rs

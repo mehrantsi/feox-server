@@ -60,7 +60,7 @@ pub struct Connection {
     // Client metadata
     pub client_name: Option<String>,
     pub client_addr: Option<SocketAddr>,
-    pub connected_at: u64,    // Unix timestamp in seconds
+    pub connected_at: u64, // Unix timestamp in seconds
     pub commands_processed: u64,
     pub flags: Vec<String>, // Client flags (e.g., "pubsub", "master", "replica")
 
@@ -174,15 +174,13 @@ impl Connection {
         {
             // Update command counter
             self.commands_processed += 1;
-            
+
             // Fast-path for common commands (SET/GET) if not in transaction
-            if self.transaction_state == TransactionState::None {
-                if self.try_fast_path(&resp_value) {
-                    self.pipeline_depth += 1;
-                    continue;
-                }
+            if self.transaction_state == TransactionState::None && self.try_fast_path(&resp_value) {
+                self.pipeline_depth += 1;
+                continue;
             }
-            
+
             // Parse command (slow path)
             let command = Command::from_resp(resp_value).map_err(crate::error::Error::Protocol)?;
 
@@ -241,20 +239,17 @@ impl Connection {
                         );
                         continue;
                     }
-                    
+
                     // Execute all queued commands
                     let mut results = Vec::new();
                     for queued_cmd in self.queued_commands.drain(..) {
                         results.push(self.executor.execute(queued_cmd));
                     }
-                    
+
                     self.transaction_state = TransactionState::None;
                     self.watched_keys.clear();
-                    
-                    write_resp_value(
-                        &mut self.write_buffer,
-                        &RespValue::Array(Some(results)),
-                    );
+
+                    write_resp_value(&mut self.write_buffer, &RespValue::Array(Some(results)));
                     continue;
                 }
                 Command::Discard => {
@@ -265,11 +260,11 @@ impl Connection {
                         );
                         continue;
                     }
-                    
+
                     self.transaction_state = TransactionState::None;
                     self.queued_commands.clear();
                     self.watched_keys.clear();
-                    
+
                     write_resp_value(
                         &mut self.write_buffer,
                         &RespValue::SimpleString(Bytes::from_static(b"OK")),
@@ -412,7 +407,7 @@ impl Connection {
             write_resp_value(&mut self.write_buffer, &resp);
         }
     }
-    
+
     /// Try to handle common commands (SET/GET) via fast path
     /// Returns true if handled, false otherwise
     #[inline(always)]
@@ -420,19 +415,19 @@ impl Connection {
         // Static responses
         const OK_RESPONSE: &[u8] = b"+OK\r\n";
         const NIL_RESPONSE: &[u8] = b"$-1\r\n";
-        
+
         // Must be an array with at least 2 elements
         let args = match resp_value {
             RespValue::Array(Some(args)) if args.len() >= 2 => args,
             _ => return false,
         };
-        
+
         // Get command name
         let cmd = match &args[0] {
             RespValue::BulkString(Some(cmd)) => cmd,
             _ => return false,
         };
-        
+
         // Check for SET command (3 args minimum: SET key value)
         if cmd.len() == 3 && cmd.eq_ignore_ascii_case(b"SET") && args.len() >= 3 {
             // Extract key and value
@@ -442,7 +437,7 @@ impl Connection {
                 }
                 _ => return false,
             };
-            
+
             // Simple SET without options
             if args.len() == 3 {
                 match self.executor.fast_set_bytes(key, value_bytes) {
@@ -452,26 +447,27 @@ impl Connection {
                     }
                     Err(e) => {
                         self.write_buffer.extend_from_slice(b"-ERR ");
-                        self.write_buffer.extend_from_slice(e.to_string().as_bytes());
+                        self.write_buffer
+                            .extend_from_slice(e.to_string().as_bytes());
                         self.write_buffer.extend_from_slice(b"\r\n");
                         return true;
                     }
                 }
             }
         }
-        
+
         // Check for GET command (2 args: GET key)
         if cmd.len() == 3 && cmd.eq_ignore_ascii_case(b"GET") && args.len() == 2 {
             let key = match &args[1] {
                 RespValue::BulkString(Some(k)) => k,
                 _ => return false,
             };
-            
+
             match self.executor.fast_get(key) {
                 Ok(value) => {
                     let mut num_buf = itoa::Buffer::new();
                     let len_str = num_buf.format(value.len());
-                    
+
                     self.write_buffer.push(b'$');
                     self.write_buffer.extend_from_slice(len_str.as_bytes());
                     self.write_buffer.extend_from_slice(b"\r\n");
@@ -485,13 +481,14 @@ impl Connection {
                 }
                 Err(e) => {
                     self.write_buffer.extend_from_slice(b"-ERR ");
-                    self.write_buffer.extend_from_slice(e.to_string().as_bytes());
+                    self.write_buffer
+                        .extend_from_slice(e.to_string().as_bytes());
                     self.write_buffer.extend_from_slice(b"\r\n");
                     return true;
                 }
             }
         }
-        
+
         false // Not a fast-path command
     }
 }

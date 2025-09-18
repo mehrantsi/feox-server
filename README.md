@@ -22,6 +22,13 @@ Testing with `memtier_benchmark` on macOS (16 cores, 50 clients, 100K requests, 
 | **Content Cache** (10% SET, 90% GET) | 2,785,080 | 1,370,185 | **2.0x** | 1.13ms | 2.27ms |
 | **Pub/Sub** (PUBLISH only) | 138,000 | 142,857 | 0.97x | 0.047ms | 0.039ms |
 
+Testing with `redis-benchmark` (1M random keys, 50 clients, pipeline 64):
+
+| Command | FeOx (ops/sec) | Redis (ops/sec) | Speedup |
+|---------|----------------|-----------------|---------|
+| **SET** | 3,952,569 | 1,538,461 | **2.6x** |
+| **GET** | 5,025,125 | 2,004,008 | **2.5x** |
+
 ### Highlights
 
 - **2x faster** for typical cache workloads with **45-50% lower latency**
@@ -98,6 +105,18 @@ EXPIRE key 60
 - `LLEN key` - Get the length of a list
 - `LRANGE key start stop` - Get a range of elements from a list
 - `LINDEX key index` - Get an element from a list by index
+
+### Hash Operations
+- `HSET key field value [field value ...]` - Set hash field(s)
+- `HGET key field` - Get value of a hash field
+- `HMGET key field [field ...]` - Get values of multiple hash fields
+- `HDEL key field [field ...]` - Delete one or more hash fields
+- `HEXISTS key field` - Check if a hash field exists
+- `HGETALL key` - Get all fields and values in a hash
+- `HLEN key` - Get the number of fields in a hash
+- `HKEYS key` - Get all field names in a hash
+- `HVALS key` - Get all values in a hash
+- `HINCRBY key field increment` - Increment the integer value of a hash field
 
 ### Atomic Operations
 - `INCR key` - Increment integer value
@@ -227,9 +246,9 @@ This is a limitation of the said OS on system time resolution in user space.
 ### Currently Not Supported (compared to Redis)
 - Sets (SADD, SMEMBERS, etc.)
 - Sorted Sets (ZADD, ZRANGE, etc.)
-- Hashes (HSET, HGET, etc.)
 - Transactions (MULTI, EXEC)
 - Lua scripting
+- Additional hash operations (HINCRBYFLOAT, HSETNX, HSTRLEN, HSCAN, etc.)
 - Some list operations (LINSERT, LREM, LSET, LTRIM, BLPOP, BRPOP, etc.)
 - Some client operations (CLIENT CACHING, CLIENT TRACKING, CLIENT GETREDIR, etc.)
 

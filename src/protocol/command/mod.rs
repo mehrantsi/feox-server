@@ -3,6 +3,7 @@ use bytes::Bytes;
 
 mod client;
 mod executor;
+mod hash;
 mod list;
 mod parser;
 
@@ -137,6 +138,37 @@ pub enum Command {
     Discard,
     Watch(Vec<Vec<u8>>),
     Unwatch,
+
+    // Hash commands
+    HSet {
+        key: Vec<u8>,
+        fields: Vec<(Vec<u8>, Bytes)>,
+    },
+    HGet {
+        key: Vec<u8>,
+        field: Vec<u8>,
+    },
+    HMGet {
+        key: Vec<u8>,
+        fields: Vec<Vec<u8>>,
+    },
+    HDel {
+        key: Vec<u8>,
+        fields: Vec<Vec<u8>>,
+    },
+    HExists {
+        key: Vec<u8>,
+        field: Vec<u8>,
+    },
+    HGetAll(Vec<u8>),
+    HLen(Vec<u8>),
+    HKeys(Vec<u8>),
+    HVals(Vec<u8>),
+    HIncrBy {
+        key: Vec<u8>,
+        field: Vec<u8>,
+        delta: i64,
+    },
 }
 
 impl Command {
