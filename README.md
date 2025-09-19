@@ -33,16 +33,6 @@ Testing with `redis-benchmark` (1M random keys, 50 clients, pipeline 64):
 - **Consistent performance** across different read/write ratios
 - **Better p99 latency** consistency under load
 
-### Testing Methodology
-
-- **Tool**: `memtier_benchmark` - industry standard Redis benchmarking tool
-- **Configuration**: 
-  - 50 concurrent clients
-  - 100,000 requests per test
-  - Pipeline depth of 16
-  - 10,000 unique keys
-  - 100-byte values
-
 ## Quick Start
 
 ### Installation
