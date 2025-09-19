@@ -1,12 +1,10 @@
 # FeOx Server
 
-Ultra-fast Redis-compatible server powered by FeOxDB.
-
-[📚 FeOxDB Documentation](https://feoxdb.com) | [💬 Issues](https://github.com/mehrantoosi/feox/issues)
+Ultra-fast Redis-compatible server powered by [Feox DB](https://feoxdb.com).
 
 ## Features
 
-- **Extreme Performance**: 3.8M+ SET/s, 5M+ GET/s (redis-benchmark with 50 clients and pipeline depth 64)
+- **High Performance**: 3.8M+ SET/s, 5M+ GET/s (redis-benchmark with 50 clients and pipeline depth 64)
 - **Redis Protocol Compatible**: Drop-in replacement for Redis workloads
 - **Thread-per-Core Architecture**: Scales linearly with CPU cores
 - **Lock-Free Operations**: Built on FeOxDB's lock-free data structures
