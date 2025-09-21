@@ -121,6 +121,13 @@ EXPIRE key 60
 - `MGET key [key ...]` - Get multiple values
 - `MSET key value [key value ...]` - Set multiple key-value pairs
 
+### Transaction Commands
+- `MULTI` - Mark the start of a transaction block
+- `EXEC` - Execute all commands issued after MULTI
+- `DISCARD` - Discard all commands issued after MULTI
+- `WATCH key [key ...]` - Watch keys to determine execution of MULTI/EXEC block
+- `UNWATCH` - Forget about all watched keys
+
 ### Pub/Sub Operations
 - `SUBSCRIBE channel [channel ...]` - Subscribe to channels
 - `UNSUBSCRIBE [channel ...]` - Unsubscribe from channels
@@ -234,7 +241,6 @@ This is a limitation of the said OS on system time resolution in user space.
 ### Currently Not Supported (compared to Redis)
 - Sets (SADD, SMEMBERS, etc.)
 - Sorted Sets (ZADD, ZRANGE, etc.)
-- Transactions (MULTI, EXEC)
 - Lua scripting
 - Additional hash operations (HINCRBYFLOAT, HSETNX, HSTRLEN, HSCAN, etc.)
 - Some list operations (LINSERT, LREM, LSET, LTRIM, BLPOP, BRPOP, etc.)
