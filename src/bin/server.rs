@@ -114,10 +114,15 @@ fn main() -> anyhow::Result<()> {
     let server = Arc::new(Server::new(config)?);
 
     // Setup signal handlers for graceful shutdown
-    let server_clone = Arc::clone(&server);
+    // Keep only a weak reference in the process-wide signal handler. A strong
+    // reference would keep FeoxStore alive until process exit and prevent its
+    // Drop-based cleanup from ever running.
+    let server_weak = Arc::downgrade(&server);
     ctrlc::set_handler(move || {
         info!("Received shutdown signal, shutting down gracefully...");
-        server_clone.shutdown();
+        if let Some(server) = server_weak.upgrade() {
+            server.shutdown();
+        }
     })?;
 
     // Run the server

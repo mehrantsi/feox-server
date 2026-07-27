@@ -271,6 +271,25 @@ pub static COMMAND_TABLE: &[CommandDef] = &[
         step: 0,
         acl_categories: &["@keyspace", "@read", "@slow"],
     },
+    // Feox-specific commands
+    CommandDef {
+        name: "jsonpatch",
+        arity: 3,
+        flags: &["write", "denyoom"],
+        first_key: 1,
+        last_key: 1,
+        step: 1,
+        acl_categories: &["@write", "@string", "@slow"],
+    },
+    CommandDef {
+        name: "cas",
+        arity: 4,
+        flags: &["write", "denyoom"],
+        first_key: 1,
+        last_key: 1,
+        step: 1,
+        acl_categories: &["@write", "@string", "@slow"],
+    },
     // List commands
     CommandDef {
         name: "lpush",

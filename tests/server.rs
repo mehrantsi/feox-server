@@ -89,6 +89,48 @@ fn test_command_info() {
 }
 
 #[test]
+fn test_command_info_feox_extensions() {
+    let server = TestServer::new();
+    let mut conn = server.client();
+
+    let result: Vec<redis::Value> = redis::cmd("COMMAND")
+        .arg("INFO")
+        .arg("JSONPATCH")
+        .arg("CAS")
+        .query(&mut conn)
+        .unwrap();
+
+    assert_eq!(result.len(), 2);
+
+    for (value, expected_name, expected_arity) in [
+        (&result[0], b"jsonpatch".as_slice(), 3),
+        (&result[1], b"cas".as_slice(), 4),
+    ] {
+        let redis::Value::Array(fields) = value else {
+            panic!("expected command metadata array");
+        };
+        assert_eq!(fields.len(), 10);
+        assert!(matches!(
+            &fields[0],
+            redis::Value::BulkString(name) if name == expected_name
+        ));
+        assert!(matches!(&fields[1], redis::Value::Int(arity) if *arity == expected_arity));
+        assert!(matches!(&fields[3], redis::Value::Int(1)));
+        assert!(matches!(&fields[4], redis::Value::Int(1)));
+
+        let redis::Value::Array(flags) = &fields[2] else {
+            panic!("expected command flags array");
+        };
+        assert!(flags
+            .iter()
+            .any(|flag| matches!(flag, redis::Value::BulkString(value) if value == b"write")));
+        assert!(flags
+            .iter()
+            .any(|flag| matches!(flag, redis::Value::BulkString(value) if value == b"denyoom")));
+    }
+}
+
+#[test]
 fn test_command_list() {
     let server = TestServer::new();
     let mut conn = server.client();
@@ -99,6 +141,8 @@ fn test_command_list() {
     assert!(commands.contains(&"set".to_string()));
     assert!(commands.contains(&"hset".to_string()));
     assert!(commands.contains(&"lpush".to_string()));
+    assert!(commands.contains(&"jsonpatch".to_string()));
+    assert!(commands.contains(&"cas".to_string()));
 }
 
 #[test]

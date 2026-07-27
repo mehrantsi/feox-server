@@ -144,6 +144,105 @@ fn test_watch_abort_on_modification() {
 }
 
 #[test]
+fn test_watch_abort_on_jsonpatch() {
+    let server = TestServer::new();
+
+    let mut conn1 = server.client();
+    let mut conn2 = server.client();
+
+    let key = unique_key("watch_jsonpatch");
+    let _: () = conn1.set(&key, r#"{"status":"pending"}"#).unwrap();
+    let _: () = redis::cmd("WATCH").arg(&key).query(&mut conn1).unwrap();
+
+    let patch = r#"[{"op":"replace","path":"/status","value":"complete"}]"#;
+    let result: String = redis::cmd("JSONPATCH")
+        .arg(&key)
+        .arg(patch)
+        .query(&mut conn2)
+        .unwrap();
+    assert_eq!(result, "OK");
+
+    let _: () = redis::cmd("MULTI").query(&mut conn1).unwrap();
+    redis::cmd("SET")
+        .arg(&key)
+        .arg("should_not_be_set")
+        .query::<()>(&mut conn1)
+        .unwrap();
+
+    let result: Option<Vec<String>> = redis::cmd("EXEC").query(&mut conn1).unwrap();
+    assert!(result.is_none());
+
+    let value: String = conn1.get(&key).unwrap();
+    assert!(value.contains(r#""status":"complete""#));
+}
+
+#[test]
+fn test_watch_abort_on_successful_cas() {
+    let server = TestServer::new();
+
+    let mut conn1 = server.client();
+    let mut conn2 = server.client();
+
+    let key = unique_key("watch_cas_success");
+    let _: () = conn1.set(&key, "v1").unwrap();
+    let _: () = redis::cmd("WATCH").arg(&key).query(&mut conn1).unwrap();
+
+    let swapped: i64 = redis::cmd("CAS")
+        .arg(&key)
+        .arg("v1")
+        .arg("v2")
+        .query(&mut conn2)
+        .unwrap();
+    assert_eq!(swapped, 1);
+
+    let _: () = redis::cmd("MULTI").query(&mut conn1).unwrap();
+    redis::cmd("SET")
+        .arg(&key)
+        .arg("should_not_be_set")
+        .query::<()>(&mut conn1)
+        .unwrap();
+
+    let result: Option<Vec<String>> = redis::cmd("EXEC").query(&mut conn1).unwrap();
+    assert!(result.is_none());
+
+    let value: String = conn1.get(&key).unwrap();
+    assert_eq!(value, "v2");
+}
+
+#[test]
+fn test_watch_not_aborted_on_failed_cas() {
+    let server = TestServer::new();
+
+    let mut conn1 = server.client();
+    let mut conn2 = server.client();
+
+    let key = unique_key("watch_cas_failure");
+    let _: () = conn1.set(&key, "v1").unwrap();
+    let _: () = redis::cmd("WATCH").arg(&key).query(&mut conn1).unwrap();
+
+    let swapped: i64 = redis::cmd("CAS")
+        .arg(&key)
+        .arg("wrong-value")
+        .arg("v2")
+        .query(&mut conn2)
+        .unwrap();
+    assert_eq!(swapped, 0);
+
+    let _: () = redis::cmd("MULTI").query(&mut conn1).unwrap();
+    redis::cmd("SET")
+        .arg(&key)
+        .arg("transaction-value")
+        .query::<()>(&mut conn1)
+        .unwrap();
+
+    let result: Vec<String> = redis::cmd("EXEC").query(&mut conn1).unwrap();
+    assert_eq!(result, vec!["OK"]);
+
+    let value: String = conn1.get(&key).unwrap();
+    assert_eq!(value, "transaction-value");
+}
+
+#[test]
 fn test_unwatch() {
     let server = TestServer::new();
 

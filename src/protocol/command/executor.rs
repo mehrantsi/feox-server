@@ -556,7 +556,10 @@ impl CommandExecutor {
             Command::JsonPatch { key, patch } => {
                 // Use FeOx's native json_patch method
                 match self.store.json_patch(&key, &patch) {
-                    Ok(_) => RespValue::SimpleString(Bytes::from_static(b"OK")),
+                    Ok(_) => {
+                        WatchRegistry::notify_key_modified(&key);
+                        RespValue::SimpleString(Bytes::from_static(b"OK"))
+                    }
                     Err(e) => RespValue::Error(format!("ERR {}", e)),
                 }
             }
@@ -568,7 +571,11 @@ impl CommandExecutor {
             } => {
                 // Use FeOx's native compare_and_swap method
                 match self.store.compare_and_swap(&key, &expected, &new_value) {
-                    Ok(swapped) => RespValue::Integer(if swapped { 1 } else { 0 }),
+                    Ok(true) => {
+                        WatchRegistry::notify_key_modified(&key);
+                        RespValue::Integer(1)
+                    }
+                    Ok(false) => RespValue::Integer(0),
                     Err(e) => RespValue::Error(format!("ERR {}", e)),
                 }
             }

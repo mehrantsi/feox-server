@@ -11,6 +11,7 @@ mod parser;
 #[allow(unused_imports)]
 pub use command_table::{CommandDef, COMMAND_TABLE};
 pub use executor::CommandExecutor;
+pub(crate) use hash::flush_pending_metadata as flush_hash_metadata;
 
 #[derive(Debug, Clone)]
 pub enum Command {

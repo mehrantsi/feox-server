@@ -2,8 +2,10 @@ use crate::client_registry::ClientRegistry;
 use crate::pubsub::{handle_pubsub_operation, GlobalRegistry, ThreadLocalPubSub};
 use crate::{config::Config, error::Result, network::Connection};
 use feoxdb::FeoxStore;
+use std::fs::File;
+use std::io::Read;
 use std::net::TcpListener;
-use std::os::fd::{AsRawFd, RawFd};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -23,27 +25,31 @@ impl Server {
     pub fn new(config: Config) -> Result<Self> {
         config.validate()?;
 
-        // Create a single shared FeoxStore instance
-        let store = if let Some(ref data_path) = config.data_path {
-            let mut builder = FeoxStore::builder()
-                .device_path(data_path.clone())
-                .max_memory(config.max_memory_per_shard.unwrap_or(1024 * 1024 * 1024))
-                .enable_ttl(config.enable_ttl);
-
-            // Set file size if configured
-            if let Some(file_size) = config.file_size {
-                builder = builder.file_size(file_size);
+        // Older server versions never finalized FeoxDB metadata because the
+        // process-wide signal handler retained the store. Recover those files by
+        // writing the missing metadata header, then reopening so FeoxDB scans the
+        // existing records immediately (rather than only after another restart).
+        if let Some(ref data_path) = config.data_path {
+            if Self::has_uninitialized_metadata(data_path)? {
+                info!(
+                    "Persistent store metadata is uninitialized; rebuilding {}",
+                    data_path
+                );
+                let bootstrap_store = Self::build_store(&config)?;
+                bootstrap_store.flush()?;
+                drop(bootstrap_store);
             }
+        }
 
-            Arc::new(builder.build()?)
-        } else {
-            Arc::new(
-                FeoxStore::builder()
-                    .max_memory(config.max_memory_per_shard.unwrap_or(1024 * 1024 * 1024))
-                    .enable_ttl(config.enable_ttl)
-                    .build()?,
-            )
-        };
+        // Create a single shared FeoxStore instance.
+        let store = Arc::new(Self::build_store(&config)?);
+
+        // Initialize metadata as soon as a new persistent database is created.
+        // This makes records written by FeoxDB's background writer recoverable
+        // even if the machine goes down before the first graceful shutdown.
+        if config.data_path.is_some() {
+            store.flush()?;
+        }
 
         let client_registry = Arc::new(ClientRegistry::new());
 
@@ -56,6 +62,41 @@ impl Server {
         })
     }
 
+    fn build_store(config: &Config) -> Result<FeoxStore> {
+        let mut builder = FeoxStore::builder()
+            .max_memory(config.max_memory_per_shard.unwrap_or(1024 * 1024 * 1024))
+            .enable_ttl(config.enable_ttl);
+
+        if let Some(ref data_path) = config.data_path {
+            builder = builder.device_path(data_path.clone());
+            if let Some(file_size) = config.file_size {
+                builder = builder.file_size(file_size);
+            }
+        }
+
+        Ok(builder.build()?)
+    }
+
+    fn has_uninitialized_metadata<P: AsRef<Path>>(path: P) -> std::io::Result<bool> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        let file_len = path.metadata()?.len();
+        if file_len < feoxdb::constants::FEOX_SIGNATURE_SIZE as u64 {
+            return Ok(false);
+        }
+
+        let mut file = File::open(path)?;
+        let mut signature = [0u8; feoxdb::constants::FEOX_SIGNATURE_SIZE];
+        file.read_exact(&mut signature)?;
+
+        // FeoxDB preallocates new stores with zero-filled metadata. Do not alter
+        // non-Feox files whose metadata starts with some other nonzero value.
+        Ok(signature.iter().all(|byte| *byte == 0))
+    }
+
     /// Run the server, spawning worker threads
     ///
     /// This method blocks until the server is shut down.
@@ -65,7 +106,6 @@ impl Server {
             TcpListener::bind(format!("{}:{}", self.config.bind_addr, self.config.port))?;
 
         listener.set_nonblocking(true)?;
-        let listener_fd = listener.as_raw_fd();
 
         info!(
             "Server listening on {}:{}",
@@ -84,11 +124,15 @@ impl Server {
             let pubsub_registry = Arc::clone(&pubsub_registry);
             let pubsub_receiver = pubsub_receivers.remove(0);
             let client_registry = Arc::clone(&self.client_registry);
+            // Each worker must own a distinct cloned descriptor. Constructing
+            // multiple TcpListeners from the same raw fd causes double-close and
+            // can abort during graceful shutdown.
+            let worker_listener = listener.try_clone()?;
 
             let handle = thread::spawn(move || {
                 if let Err(e) = server.run_worker(
                     thread_id,
-                    listener_fd,
+                    worker_listener,
                     store,
                     pubsub_registry,
                     pubsub_receiver,
@@ -100,18 +144,32 @@ impl Server {
             handles.push(handle);
         }
 
-        // Wait for all workers to finish
+        // Wait for all workers to finish. No commands can mutate the store after
+        // this point, so it is safe to create a durable shutdown checkpoint.
         for handle in handles {
             let _ = handle.join();
         }
 
+        self.flush()?;
         Ok(())
     }
 
-    /// Signal the server to shut down gracefully
+    /// Signal the server to shut down gracefully.
+    ///
+    /// [`Server::run`] flushes persistent data after all workers have stopped.
     pub fn shutdown(&self) {
         info!("Initiating server shutdown");
         self.shutdown.store(true, Ordering::Release);
+    }
+
+    /// Flush all pending writes to durable storage.
+    ///
+    /// This is a no-op when the server is configured for memory-only storage.
+    pub fn flush(&self) -> Result<()> {
+        crate::protocol::flush_hash_metadata(&self.store);
+        self.store.flush()?;
+        info!("Persistent data flushed to disk");
+        Ok(())
     }
 
     /// Get the number of active client connections
@@ -122,7 +180,7 @@ impl Server {
     fn run_worker(
         self: &Arc<Self>,
         thread_id: usize,
-        listener_fd: RawFd,
+        listener: TcpListener,
         store: Arc<FeoxStore>,
         pubsub_registry: Arc<GlobalRegistry>,
         pubsub_receiver: crossbeam_channel::Receiver<crate::pubsub::BroadcastMsg>,
@@ -132,16 +190,14 @@ impl Server {
         use mio::{Events, Interest, Poll, Token};
         use std::collections::HashMap;
         use std::io::{ErrorKind, Read, Write};
-        use std::os::fd::FromRawFd;
 
         // Create mio Poll instance
         let mut poll = Poll::new()?;
         let mut events = Events::with_capacity(1024);
 
-        // Convert raw fd to mio listener
-        let std_listener = unsafe { TcpListener::from_raw_fd(listener_fd) };
-        std_listener.set_nonblocking(true)?;
-        let mut listener = MioTcpListener::from_std(std_listener);
+        // Convert this worker's owned listener clone to a mio listener.
+        listener.set_nonblocking(true)?;
+        let mut listener = MioTcpListener::from_std(listener);
 
         // Register listener
         const SERVER: Token = Token(0);

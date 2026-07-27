@@ -41,6 +41,19 @@ impl MetadataTracker {
 static GLOBAL_METADATA_TRACKER: Lazy<Arc<RwLock<MetadataTracker>>> =
     Lazy::new(|| Arc::new(RwLock::new(MetadataTracker::new())));
 
+/// Apply batched hash length updates before the underlying store is flushed.
+pub(crate) fn flush_pending_metadata(store: &FeoxStore) {
+    let updates = GLOBAL_METADATA_TRACKER.write().unwrap().take_updates();
+
+    for (meta_key, delta) in updates {
+        if delta != 0 {
+            // Preserve the existing best-effort metadata behavior. Hash fields remain
+            // authoritative even if a metadata update cannot be applied.
+            store.atomic_increment(&meta_key, delta).ok();
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct HashOperations {
     store: Arc<FeoxStore>,
@@ -52,14 +65,7 @@ impl HashOperations {
     }
 
     fn flush_metadata(&self) {
-        let mut tracker = GLOBAL_METADATA_TRACKER.write().unwrap();
-        let updates = tracker.take_updates();
-
-        for (meta_key, delta) in updates {
-            if delta != 0 {
-                self.store.atomic_increment(&meta_key, delta).ok();
-            }
-        }
+        flush_pending_metadata(&self.store);
     }
 
     fn maybe_flush_metadata(&self) {
